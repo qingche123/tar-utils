@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"bytes"
 	gopath "path"
 	fp "path/filepath"
 	"strings"
@@ -73,6 +74,47 @@ func (te *Extractor) Extract(reader io.Reader) error {
 			if err := te.extractSymlink(header); err != nil {
 				return err
 			}
+		default:
+			return fmt.Errorf("unrecognized tar header type: %d", header.Typeflag)
+		}
+	}
+	return nil
+}
+
+func (te *Extractor) ExtractToData(reader io.Reader, buff *bytes.Buffer) error {
+	tarReader := tar.NewReader(reader)
+
+	for i := 0; ; i++ {
+		header, err := tarReader.Next()
+		if err != nil && err != io.EOF {
+			return err
+		}
+		if header == nil || err == io.EOF {
+			break
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			return fmt.Errorf("data is not a file")
+		case tar.TypeReg:
+			buf := make([]byte, 4096)
+			for {
+				n, err := tarReader.Read(buf)
+				if n != 0 {
+					if te.Progress != nil {
+						te.Progress(int64(n))
+					}
+					buff.Write(buf[:n])
+				}
+				if err != nil {
+					if err == io.EOF {
+						return nil
+					}
+					return err
+				}
+			}
+		case tar.TypeSymlink:
+			return fmt.Errorf("data is not a file")
 		default:
 			return fmt.Errorf("unrecognized tar header type: %d", header.Typeflag)
 		}
